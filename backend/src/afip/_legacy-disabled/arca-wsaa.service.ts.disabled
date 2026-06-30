@@ -1,0 +1,185 @@
+import axios from "axios";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+import { parseStringPromise } from "xml2js";
+import prisma from "../../prisma";
+import { arcaCryptoService } from "./arca-crypto.service";
+import { getArcaWsaaUrl } from "./arca-config.utils";
+import { arcaConfigService } from "./arca-config.service";
+
+const execFileAsync = promisify(execFile);
+
+function buildTra(service: string) {
+  const now = new Date();
+  const generationTime = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+  const expirationTime = new Date(now.getTime() + 12 * 60 * 60 * 1000).toISOString();
+  const uniqueId = Math.floor(now.getTime() / 1000);
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<loginTicketRequest version="1.0">
+  <header>
+    <uniqueId>${uniqueId}</uniqueId>
+    <generationTime>${generationTime}</generationTime>
+    <expirationTime>${expirationTime}</expirationTime>
+  </header>
+  <service>${service}</service>
+</loginTicketRequest>`;
+}
+
+async function signTra(traXml: string, certificatePem: string, privateKeyPem: string) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "arca-grupovj-"));
+  const traPath = path.join(dir, "tra.xml");
+  const certPath = path.join(dir, "cert.pem");
+  const keyPath = path.join(dir, "key.pem");
+  const cmsPath = path.join(dir, "tra.cms");
+
+  try {
+    await fs.writeFile(traPath, traXml, "utf8");
+    await fs.writeFile(certPath, certificatePem, "utf8");
+    await fs.writeFile(keyPath, privateKeyPem, "utf8");
+
+    const openssl = process.env.ARCA_OPENSSL_PATH || process.env.AFIP_OPENSSL_PATH || "openssl";
+
+    await execFileAsync(openssl, [
+      "smime",
+      "-sign",
+      "-in",
+      traPath,
+      "-out",
+      cmsPath,
+      "-signer",
+      certPath,
+      "-inkey",
+      keyPath,
+      "-outform",
+      "DER",
+      "-nodetach",
+    ]);
+
+    const cms = await fs.readFile(cmsPath);
+    return cms.toString("base64");
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}
+
+function extractLoginCmsResult(data: any): string {
+  if (typeof data === "string") return data;
+
+  const envelope = data?.["soap:Envelope"] || data?.["SOAP-ENV:Envelope"] || data?.Envelope;
+  const body = envelope?.["soap:Body"]?.[0] || envelope?.["SOAP-ENV:Body"]?.[0] || envelope?.Body?.[0];
+  const response = body?.loginCmsResponse?.[0] || body?.["ns1:loginCmsResponse"]?.[0];
+  const result = response?.loginCmsReturn?.[0] || response?.["loginCmsReturn"]?.[0];
+
+  if (!result) throw new Error("No se pudo leer loginCmsReturn de WSAA.");
+  return result;
+}
+
+function extractCredentials(loginTicketResponse: any) {
+  const response = loginTicketResponse.loginTicketResponse;
+  const credentials = response.credentials?.[0];
+  const header = response.header?.[0];
+
+  const token = credentials?.token?.[0];
+  const sign = credentials?.sign?.[0];
+  const expirationTime = header?.expirationTime?.[0];
+
+  if (!token || !sign || !expirationTime) {
+    throw new Error("WSAA respondió sin token/sign/expirationTime.");
+  }
+
+  return { token, sign, expirationTime: new Date(expirationTime) };
+}
+
+export const arcaWsaaService = {
+  async getValidTicket(service = process.env.ARCA_DEFAULT_SERVICE || process.env.AFIP_DEFAULT_SERVICE || "wsfe") {
+    const config = await arcaConfigService.getInternalConfig();
+
+    if (!config) throw new Error("Primero configurá ARCA para Grupo VJ.");
+    if (!config.isActive) throw new Error("La configuración ARCA está desactivada.");
+    if (!config.cuit || config.cuit === "00000000000") throw new Error("Falta CUIT de Grupo VJ.");
+    if (!config.certEncrypted) throw new Error("Tenés que cargar el certificado digital antes de probar WSAA.");
+    if (!config.keyEncrypted) throw new Error("Tenés que cargar la clave privada asociada al certificado.");
+    if (config.certExpiresAt && config.certExpiresAt.getTime() < Date.now()) {
+      throw new Error("El certificado está vencido. Generá uno nuevo desde ARCA.");
+    }
+
+    const existing = await prisma.afipToken.findUnique({
+      where: { arcaConfigId_service: { arcaConfigId: config.id, service } },
+    });
+
+    const safetyWindowMs = 10 * 60 * 1000;
+    if (existing && existing.expiration.getTime() - safetyWindowMs > Date.now()) {
+      return {
+        token: arcaCryptoService.decrypt(existing.tokenEncrypted),
+        sign: arcaCryptoService.decrypt(existing.signEncrypted),
+        cuit: config.cuit,
+        environment: config.environment,
+        expiration: existing.expiration,
+      };
+    }
+
+    const certificatePem = arcaCryptoService.decrypt(config.certEncrypted);
+    const privateKeyPem = arcaCryptoService.decrypt(config.keyEncrypted);
+    const traXml = buildTra(service);
+    const cms = await signTra(traXml, certificatePem, privateKeyPem);
+
+    const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:wsaa="http://wsaa.view.sua.dvadac.desein.afip.gov">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <wsaa:loginCms>
+      <wsaa:in0>${cms}</wsaa:in0>
+    </wsaa:loginCms>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+    const response = await axios.post(getArcaWsaaUrl(config.environment), soapEnvelope, {
+      headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "" },
+      timeout: 30000,
+    });
+
+    const parsedSoap = await parseStringPromise(response.data, { explicitArray: true });
+    const loginCmsReturn = extractLoginCmsResult(parsedSoap);
+    const parsedTicket = await parseStringPromise(loginCmsReturn, { explicitArray: true });
+    const ticket = extractCredentials(parsedTicket);
+
+    await prisma.afipToken.upsert({
+      where: { arcaConfigId_service: { arcaConfigId: config.id, service } },
+      update: {
+        tokenEncrypted: arcaCryptoService.encrypt(ticket.token),
+        signEncrypted: arcaCryptoService.encrypt(ticket.sign),
+        expiration: ticket.expirationTime,
+      },
+      create: {
+        arcaConfigId: config.id,
+        service,
+        tokenEncrypted: arcaCryptoService.encrypt(ticket.token),
+        signEncrypted: arcaCryptoService.encrypt(ticket.sign),
+        expiration: ticket.expirationTime,
+      },
+    });
+
+    await prisma.arcaConfig.update({
+      where: { id: config.id },
+      data: {
+        status: "ACTIVE",
+        lastTokenAt: new Date(),
+        lastCheckAt: new Date(),
+        lastSuccessAt: new Date(),
+        lastError: null,
+      },
+    });
+
+    return {
+      token: ticket.token,
+      sign: ticket.sign,
+      cuit: config.cuit,
+      environment: config.environment,
+      expiration: ticket.expirationTime,
+    };
+  },
+};

@@ -1,0 +1,175 @@
+import { Request, Response, NextFunction } from "express";
+import axios from "axios";
+import { parseStringPromise } from "xml2js";
+import { arcaConfigService } from "./arca-config.service";
+import { arcaWsaaService } from "./arca-wsaa.service";
+import { getArcaWsfeUrl } from "./arca-config.utils";
+
+function userId(req: Request) {
+  return (req as any).user?.id as string | undefined;
+}
+
+function ip(req: Request) {
+  return req.ip || req.headers["x-forwarded-for"]?.toString();
+}
+
+export const arcaConfigController = {
+  async getConfig(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const config = await arcaConfigService.getOrCreateConfig();
+      res.json({ ok: true, config });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async updateConfig(req: Request, res: Response, next: NextFunction) {
+    try {
+      const config = await arcaConfigService.updateConfig(req.body, userId(req), ip(req));
+      res.json({ ok: true, config });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async uploadCertificate(req: Request, res: Response, next: NextFunction) {
+    try {
+      const config = await arcaConfigService.uploadCertificate(req.body, userId(req), ip(req));
+      res.json({ ok: true, config });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async deleteCertificate(req: Request, res: Response, next: NextFunction) {
+    try {
+      const config = await arcaConfigService.deleteCertificate(userId(req), ip(req));
+      res.json({ ok: true, config });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async testWsaa(req: Request, res: Response, next: NextFunction) {
+    try {
+      const ticket = await arcaWsaaService.getValidTicket("wsfe");
+      const config = await arcaConfigService.getInternalConfig();
+      if (config) {
+        await arcaConfigService.audit("TEST_WSAA", config.id, userId(req), "Prueba WSAA correcta.", ip(req));
+      }
+
+      res.json({
+        ok: true,
+        message: "WSAA conectado correctamente.",
+        data: {
+          cuit: ticket.cuit,
+          environment: ticket.environment,
+          expiration: ticket.expiration,
+        },
+      });
+    } catch (err) {
+      const config = await arcaConfigService.getInternalConfig();
+      if (config) {
+        await arcaConfigService.audit("TEST_WSAA", config.id, userId(req), `Error WSAA: ${(err as Error).message}`, ip(req));
+      }
+      next(err);
+    }
+  },
+
+  async testWsfeDummy(req: Request, res: Response, next: NextFunction) {
+    try {
+      const ticket = await arcaWsaaService.getValidTicket("wsfe");
+      const url = getArcaWsfeUrl(ticket.environment);
+
+      const soapEnvelope = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:ar="http://ar.gov.afip.dif.FEV1/">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ar:FEDummy/>
+  </soapenv:Body>
+</soapenv:Envelope>`;
+
+      const response = await axios.post(url, soapEnvelope, {
+        headers: { "Content-Type": "text/xml; charset=utf-8", SOAPAction: "http://ar.gov.afip.dif.FEV1/FEDummy" },
+        timeout: 30000,
+      });
+
+      const parsed = await parseStringPromise(response.data, { explicitArray: false });
+      const config = await arcaConfigService.getInternalConfig();
+      if (config) {
+        await arcaConfigService.audit("TEST_WSFE_DUMMY", config.id, userId(req), "Prueba FEDummy correcta.", ip(req));
+      }
+
+      res.json({ ok: true, message: "WSFE/FEDummy respondió correctamente.", raw: parsed });
+    } catch (err) {
+      const config = await arcaConfigService.getInternalConfig();
+      if (config) {
+        await arcaConfigService.audit("TEST_WSFE_DUMMY", config.id, userId(req), `Error FEDummy: ${(err as Error).message}`, ip(req));
+      }
+      next(err);
+    }
+  },
+
+  async listPointsOfSale(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const points = await arcaConfigService.listPointsOfSale();
+      res.json({ ok: true, points });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async upsertPointOfSale(req: Request, res: Response, next: NextFunction) {
+    try {
+      const point = await arcaConfigService.upsertPointOfSale(req.body, userId(req), ip(req));
+      res.json({ ok: true, point });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async deletePointOfSale(req: Request, res: Response, next: NextFunction) {
+    try {
+      const point = await arcaConfigService.deletePointOfSale(req.params.id, userId(req), ip(req));
+      res.json({ ok: true, point });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listRemitoCais(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const remitoCais = await arcaConfigService.listRemitoCais();
+      res.json({ ok: true, remitoCais });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async upsertRemitoCai(req: Request, res: Response, next: NextFunction) {
+    try {
+      const remitoCai = await arcaConfigService.upsertRemitoCai(req.body, userId(req), ip(req));
+      res.json({ ok: true, remitoCai });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async deleteRemitoCai(req: Request, res: Response, next: NextFunction) {
+    try {
+      const remitoCai = await arcaConfigService.deleteRemitoCai(req.params.id, userId(req), ip(req));
+      res.json({ ok: true, remitoCai });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async listAuditLogs(_req: Request, res: Response, next: NextFunction) {
+    try {
+      const logs = await arcaConfigService.listAuditLogs();
+      res.json({ ok: true, logs });
+    } catch (err) {
+      next(err);
+    }
+  },
+};

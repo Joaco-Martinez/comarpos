@@ -1,0 +1,24 @@
+export type FiscalRole = "ADMIN" | "CONTADOR";
+
+export type SafeArcaConfig = {
+  id: string;
+  businessName: string;
+  cuit: string;
+  ivaCondition?: string | null;
+  fiscalAddress?: string | null;
+  iibb?: string | null;
+  environment: "HOMOLOGACION" | "PRODUCCION";
+  status: string;
+  defaultPointOfSale?: number | null;
+  defaultCurrencyId: string;
+  defaultConcept: number;
+  certAlias?: string | null;
+  certExpiresAt?: Date | null;
+  hasCertificate: boolean;
+  hasPrivateKey: boolean;
+  lastTokenAt?: Date | null;
+  lastCheckAt?: Date | null;
+  lastSuccessAt?: Date | null;
+  lastError?: string | null;
+  isActive: boolean;
+};

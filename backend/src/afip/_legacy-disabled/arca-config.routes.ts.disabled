@@ -1,0 +1,42 @@
+import { Router, Request, Response, NextFunction } from "express";
+import { authMiddleware } from "../../middleware/auth";
+import { arcaConfigController } from "./arca-config.controller";
+
+const router = Router();
+
+function requireFiscalRole(req: Request, res: Response, next: NextFunction) {
+  const role = (req as any).user?.role;
+
+  if (role !== "ADMIN" && role !== "CONTADOR") {
+    return res.status(403).json({
+      ok: false,
+      message: "No autorizado. Solo ADMIN o CONTADOR pueden modificar Configuración ARCA.",
+    });
+  }
+
+  next();
+}
+
+router.use(authMiddleware);
+router.use(requireFiscalRole);
+
+router.get("/", arcaConfigController.getConfig);
+router.put("/", arcaConfigController.updateConfig);
+
+router.post("/certificados", arcaConfigController.uploadCertificate);
+router.delete("/certificados", arcaConfigController.deleteCertificate);
+
+router.post("/test/wsaa", arcaConfigController.testWsaa);
+router.post("/test/wsfe-dummy", arcaConfigController.testWsfeDummy);
+
+router.get("/puntos-venta", arcaConfigController.listPointsOfSale);
+router.post("/puntos-venta", arcaConfigController.upsertPointOfSale);
+router.delete("/puntos-venta/:id", arcaConfigController.deletePointOfSale);
+
+router.get("/remitos-cai", arcaConfigController.listRemitoCais);
+router.post("/remitos-cai", arcaConfigController.upsertRemitoCai);
+router.delete("/remitos-cai/:id", arcaConfigController.deleteRemitoCai);
+
+router.get("/auditoria", arcaConfigController.listAuditLogs);
+
+export default router;

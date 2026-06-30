@@ -1,0 +1,237 @@
+tags:
+  - name: Product Categories
+    description: Endpoints para gestión de categorías dinámicas de productos
+
+paths:
+  /categories:
+    get:
+      summary: Listar categorías de productos
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: includeInactive
+          schema:
+            type: boolean
+          description: Incluir categorías inactivas
+        - in: query
+          name: all
+          schema:
+            type: boolean
+          description: Alias para incluir categorías inactivas
+      responses:
+        200:
+          description: Lista de categorías
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductCategory"
+
+    post:
+      summary: Crear una categoría de producto
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCategoryInput"
+      responses:
+        201:
+          description: Categoría creada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductCategory"
+        400:
+          description: Error de validación
+        409:
+          description: Categoría duplicada
+
+  /categories/{id}:
+    get:
+      summary: Obtener categoría por ID
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Categoría encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductCategoryWithProducts"
+        404:
+          description: Categoría no encontrada
+
+    put:
+      summary: Actualizar categoría
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductCategoryUpdateInput"
+      responses:
+        200:
+          description: Categoría actualizada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductCategory"
+        404:
+          description: Categoría no encontrada
+
+    delete:
+      summary: Eliminar o desactivar categoría
+      description: Si la categoría tiene productos, se desactiva. Si no tiene productos, se elimina definitivamente.
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Categoría eliminada o desactivada correctamente
+        404:
+          description: Categoría no encontrada
+
+  /categories/slug/{slug}:
+    get:
+      summary: Obtener categoría por slug
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Categoría encontrada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductCategoryWithProducts"
+        404:
+          description: Categoría no encontrada
+
+  /categories/{id}/restore:
+    patch:
+      summary: Restaurar categoría desactivada
+      tags: [Product Categories]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Categoría restaurada correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductCategory"
+        404:
+          description: Categoría no encontrada
+
+components:
+  schemas:
+    ProductCategoryInput:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          example: Chocolates
+        description:
+          type: string
+          nullable: true
+          example: Productos elaborados con chocolate
+        isActive:
+          type: boolean
+          example: true
+
+    ProductCategoryUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+          example: Promociones
+        description:
+          type: string
+          nullable: true
+          example: Combos, cajas y productos promocionales
+        isActive:
+          type: boolean
+          example: true
+
+    ProductCategory:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Chocolates
+        slug:
+          type: string
+          example: chocolates
+        description:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        _count:
+          type: object
+          properties:
+            products:
+              type: integer
+              example: 12
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    ProductCategoryWithProducts:
+      allOf:
+        - $ref: "#/components/schemas/ProductCategory"
+        - type: object
+          properties:
+            products:
+              type: array
+              items:
+                type: object

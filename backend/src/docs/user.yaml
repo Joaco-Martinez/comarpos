@@ -1,0 +1,70 @@
+paths:
+  /users:
+    get:
+      summary: Obtener todos los usuarios
+      tags: [Users]
+      responses:
+        200:
+          description: Lista de usuarios
+    post:
+      summary: Crear usuario
+      tags: [Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                name:
+                  type: string
+                role:
+                  type: string
+                  enum: [ADMIN, EMPLEADO]
+      responses:
+        201:
+          description: Usuario creado
+
+  /users/{id}:
+    get:
+      summary: Obtener usuario por ID
+      tags: [Users]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Usuario encontrado
+        404:
+          description: Usuario no encontrado
+    put:
+      summary: Actualizar usuario
+      tags: [Users]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Usuario actualizado
+    delete:
+      summary: Eliminar usuario
+      tags: [Users]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Usuario eliminado

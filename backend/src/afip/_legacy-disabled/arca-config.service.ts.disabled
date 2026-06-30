@@ -1,0 +1,278 @@
+import forge from "node-forge";
+import prisma from "../../prisma";
+import { arcaCryptoService } from "./arca-crypto.service";
+import { isValidCuit, normalizeCuit, optionalDate, requiredString } from "./arca-config.utils";
+import { UpdateArcaConfigDto } from "./dto/update-arca-config.dto";
+import { UploadCertificateDto } from "./dto/upload-certificate.dto";
+import { PointOfSaleDto } from "./dto/point-of-sale.dto";
+import { RemitoCaiDto } from "./dto/remito-cai.dto";
+
+const SCOPE = "GRUPO_VJ";
+
+function safeConfig(config: any) {
+  if (!config) return null;
+
+  return {
+    ...config,
+    certEncrypted: undefined,
+    keyEncrypted: undefined,
+    hasCertificate: Boolean(config.certEncrypted),
+    hasPrivateKey: Boolean(config.keyEncrypted),
+    tokens: undefined,
+  };
+}
+
+function parseCertificateExpiration(certificatePem: string): Date | undefined {
+  try {
+    const cert = forge.pki.certificateFromPem(certificatePem);
+    return cert.validity.notAfter;
+  } catch {
+    return undefined;
+  }
+}
+
+export const arcaConfigService = {
+  async getOrCreateConfig() {
+    const existing = await prisma.arcaConfig.findUnique({
+      where: { scope: SCOPE },
+      include: {
+        pointsOfSale: { orderBy: [{ isDefault: "desc" }, { number: "asc" }] },
+        remitoCais: { orderBy: { createdAt: "desc" } },
+      },
+    });
+
+    if (existing) return safeConfig(existing);
+
+    const created = await prisma.arcaConfig.create({
+      data: {
+        scope: SCOPE,
+        businessName: "GRUPO VJ",
+        cuit: "00000000000",
+        status: "INACTIVE",
+      },
+      include: {
+        pointsOfSale: true,
+        remitoCais: true,
+      },
+    });
+
+    return safeConfig(created);
+  },
+
+  async getInternalConfig() {
+    return prisma.arcaConfig.findUnique({ where: { scope: SCOPE } });
+  },
+
+  async updateConfig(dto: UpdateArcaConfigDto, userId?: string, ip?: string) {
+    const current = await this.getOrCreateConfig();
+    const cuit = dto.cuit !== undefined ? normalizeCuit(dto.cuit) : undefined;
+
+    if (cuit !== undefined && !isValidCuit(cuit)) {
+      throw new Error("El CUIT ingresado no tiene un formato válido. Revisá los 11 dígitos.");
+    }
+
+    const data: any = {
+      businessName: dto.businessName !== undefined ? requiredString(dto.businessName, "Razón social") : undefined,
+      cuit,
+      ivaCondition: dto.ivaCondition,
+      fiscalAddress: dto.fiscalAddress,
+      iibb: dto.iibb,
+      activityStart: optionalDate(dto.activityStart),
+      environment: dto.environment,
+      defaultPointOfSale: dto.defaultPointOfSale,
+      defaultCurrencyId: dto.defaultCurrencyId,
+      defaultConcept: dto.defaultConcept,
+      isActive: dto.isActive,
+    };
+
+    Object.keys(data).forEach((key) => data[key] === undefined && delete data[key]);
+
+    const updated = await prisma.arcaConfig.update({
+      where: { id: current!.id },
+      data: {
+        ...data,
+        status: data.isActive === false ? "INACTIVE" : undefined,
+      },
+      include: { pointsOfSale: true, remitoCais: true },
+    });
+
+    await this.audit("UPDATE_CONFIG", updated.id, userId, "Se actualizó la configuración fiscal de Grupo VJ.", ip);
+
+    return safeConfig(updated);
+  },
+
+  async uploadCertificate(dto: UploadCertificateDto, userId?: string, ip?: string) {
+    const config = await this.getOrCreateConfig();
+
+    const certificatePem = requiredString(dto.certificatePem, "Certificado");
+    const privateKeyPem = requiredString(dto.privateKeyPem, "Private key");
+
+    const detectedExpiration = parseCertificateExpiration(certificatePem);
+    const certExpiresAt = optionalDate(dto.certExpiresAt) || detectedExpiration;
+    const isExpired = certExpiresAt ? certExpiresAt.getTime() < Date.now() : false;
+
+    const updated = await prisma.arcaConfig.update({
+      where: { id: config!.id },
+      data: {
+        certEncrypted: arcaCryptoService.encrypt(certificatePem),
+        keyEncrypted: arcaCryptoService.encrypt(privateKeyPem),
+        certAlias: dto.certAlias || "Certificado Grupo VJ",
+        certExpiresAt,
+        status: isExpired ? "CERT_EXPIRED" : "INCOMPLETE",
+        lastError: isExpired ? "El certificado cargado está vencido." : null,
+      },
+      include: { pointsOfSale: true, remitoCais: true },
+    });
+
+    await this.audit("UPLOAD_CERTIFICATE", updated.id, userId, "Se cargaron certificado y private key cifrados.", ip);
+
+    return safeConfig(updated);
+  },
+
+  async deleteCertificate(userId?: string, ip?: string) {
+    const config = await this.getOrCreateConfig();
+
+    const updated = await prisma.arcaConfig.update({
+      where: { id: config!.id },
+      data: {
+        certEncrypted: null,
+        keyEncrypted: null,
+        certAlias: null,
+        certExpiresAt: null,
+        status: "INACTIVE",
+        lastError: null,
+      },
+      include: { pointsOfSale: true, remitoCais: true },
+    });
+
+    await prisma.afipToken.deleteMany({ where: { arcaConfigId: updated.id } });
+    await this.audit("DELETE_CERTIFICATE", updated.id, userId, "Se eliminaron certificados y tokens ARCA.", ip);
+
+    return safeConfig(updated);
+  },
+
+  async upsertPointOfSale(dto: PointOfSaleDto, userId?: string, ip?: string) {
+    const config = await this.getOrCreateConfig();
+    const number = Number(dto.number);
+
+    if (!Number.isInteger(number) || number <= 0) {
+      throw new Error("El punto de venta debe ser un número válido.");
+    }
+
+    if (dto.isDefault) {
+      await prisma.arcaPointOfSale.updateMany({
+        where: { arcaConfigId: config!.id },
+        data: { isDefault: false },
+      });
+    }
+
+    const point = dto.id
+      ? await prisma.arcaPointOfSale.update({
+          where: { id: dto.id },
+          data: {
+            number,
+            description: dto.description,
+            enabled: dto.enabled ?? true,
+            isDefault: dto.isDefault ?? false,
+            enabledCbteTypes: dto.enabledCbteTypes ?? [],
+          },
+        })
+      : await prisma.arcaPointOfSale.upsert({
+          where: { arcaConfigId_number: { arcaConfigId: config!.id, number } },
+          update: {
+            description: dto.description,
+            enabled: dto.enabled ?? true,
+            isDefault: dto.isDefault ?? false,
+            enabledCbteTypes: dto.enabledCbteTypes ?? [],
+          },
+          create: {
+            arcaConfigId: config!.id,
+            number,
+            description: dto.description,
+            enabled: dto.enabled ?? true,
+            isDefault: dto.isDefault ?? false,
+            enabledCbteTypes: dto.enabledCbteTypes ?? [],
+          },
+        });
+
+    if (dto.isDefault) {
+      await prisma.arcaConfig.update({
+        where: { id: config!.id },
+        data: { defaultPointOfSale: number },
+      });
+    }
+
+    await this.audit("UPSERT_POINT_OF_SALE", config!.id, userId, `Punto de venta ${number} guardado.`, ip);
+
+    return point;
+  },
+
+  async listPointsOfSale() {
+    const config = await this.getOrCreateConfig();
+    return prisma.arcaPointOfSale.findMany({
+      where: { arcaConfigId: config!.id },
+      orderBy: [{ isDefault: "desc" }, { number: "asc" }],
+    });
+  },
+
+  async deletePointOfSale(id: string, userId?: string, ip?: string) {
+    const deleted = await prisma.arcaPointOfSale.delete({ where: { id } });
+    await this.audit("DELETE_POINT_OF_SALE", deleted.arcaConfigId, userId, `Punto de venta ${deleted.number} eliminado.`, ip);
+    return deleted;
+  },
+
+  async upsertRemitoCai(dto: RemitoCaiDto, userId?: string, ip?: string) {
+    const config = await this.getOrCreateConfig();
+    const expiresAt = optionalDate(dto.expiresAt);
+    if (!expiresAt) throw new Error("La fecha de vencimiento del CAI es obligatoria.");
+
+    const data = {
+      arcaConfigId: config!.id,
+      mode: dto.mode || "PREPRINTED_FORM",
+      pointOfSale: Number(dto.pointOfSale),
+      cai: requiredString(dto.cai, "CAI"),
+      expiresAt,
+      rangeFrom: dto.rangeFrom,
+      rangeTo: dto.rangeTo,
+      nextNumber: dto.nextNumber,
+      enabled: dto.enabled ?? true,
+    } as const;
+
+    const remito = dto.id
+      ? await prisma.remitoCaiConfig.update({ where: { id: dto.id }, data })
+      : await prisma.remitoCaiConfig.create({ data });
+
+    await this.audit("UPSERT_REMITO_CAI", config!.id, userId, `CAI de remitos ${data.cai} guardado.`, ip);
+
+    return remito;
+  },
+
+  async listRemitoCais() {
+    const config = await this.getOrCreateConfig();
+    return prisma.remitoCaiConfig.findMany({
+      where: { arcaConfigId: config!.id },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  async deleteRemitoCai(id: string, userId?: string, ip?: string) {
+    const deleted = await prisma.remitoCaiConfig.delete({ where: { id } });
+    await this.audit("DELETE_REMITO_CAI", deleted.arcaConfigId, userId, `CAI ${deleted.cai} eliminado.`, ip);
+    return deleted;
+  },
+
+  async audit(action: any, arcaConfigId?: string, userId?: string, detail?: string, ip?: string) {
+    return prisma.arcaAuditLog.create({
+      data: { action, arcaConfigId, userId, detail, ip },
+    });
+  },
+
+  async listAuditLogs() {
+    const config = await this.getOrCreateConfig();
+    return prisma.arcaAuditLog.findMany({
+      where: { arcaConfigId: config!.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+    });
+  },
+};

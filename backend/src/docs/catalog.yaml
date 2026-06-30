@@ -1,0 +1,78 @@
+/catalog/categories:
+  get:
+    tags:
+      - Catalog
+    summary: Lista categorías activas para la tienda pública
+    responses:
+      200:
+        description: Categorías activas
+
+/catalog/products:
+  get:
+    tags:
+      - Catalog
+    summary: Lista productos activos con precio calculado según cliente logueado
+    parameters:
+      - in: query
+        name: category
+        schema:
+          type: string
+        description: Slug de categoría
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Texto de búsqueda por nombre, descripción o SKU
+      - in: query
+        name: page
+        schema:
+          type: number
+      - in: query
+        name: limit
+        schema:
+          type: number
+    responses:
+      200:
+        description: Productos de catálogo
+
+/catalog/checkout-whatsapp:
+  post:
+    tags:
+      - Catalog
+    summary: Crea una venta PENDING desde la tienda y devuelve link de WhatsApp
+    security:
+      - cookieAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - items
+            properties:
+              paymentMethod:
+                type: string
+                example: TRANSFERENCIA
+              customerNotes:
+                type: string
+              items:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - productId
+                  properties:
+                    productId:
+                      type: string
+                    quantity:
+                      type: number
+                    quantityKg:
+                      type: number
+    responses:
+      201:
+        description: Venta creada y URL WhatsApp generada
+      401:
+        description: Cliente no autenticado
+      403:
+        description: Usuario no cliente

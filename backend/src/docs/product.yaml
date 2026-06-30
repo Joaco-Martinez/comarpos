@@ -1,0 +1,678 @@
+tags:
+  - name: Products
+    description: Endpoints para gestión de productos, stock y productos compuestos
+
+paths:
+  /products:
+    get:
+      summary: Listar todos los productos activos
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: Lista de productos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+
+    post:
+      summary: Crear un nuevo producto
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductInput"
+      responses:
+        201:
+          description: Producto creado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        400:
+          description: Error de validación
+        409:
+          description: SKU duplicado
+
+  /products/{id}:
+    get:
+      summary: Obtener un producto por ID
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Producto encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        404:
+          description: Producto no encontrado
+
+    put:
+      summary: Actualizar un producto
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProductUpdateInput"
+      responses:
+        200:
+          description: Producto actualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+    delete:
+      summary: Eliminar lógicamente un producto
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Producto eliminado
+
+  /products/sku/{sku}:
+    get:
+      summary: Obtener producto por SKU
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: sku
+          required: true
+          schema:
+            type: string
+      responses:
+        200:
+          description: Producto encontrado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+        404:
+          description: Producto no encontrado
+
+  /products/{id}/components:
+    put:
+      summary: Actualizar componentes de un producto compuesto
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - components
+              properties:
+                components:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ProductComponentInput"
+      responses:
+        200:
+          description: Componentes actualizados correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+  /products/{id}/image:
+    patch:
+      summary: Actualizar imagen de producto
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          description: Imagen actualizada correctamente
+
+  /products/transfer:
+    post:
+      summary: Transferir stock UNIT entre local y depósito
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockTransferInput"
+      responses:
+        200:
+          description: Stock transferido correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+  /products/add-stock:
+    post:
+      summary: Agregar stock UNIT a local o depósito
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockIngressInput"
+      responses:
+        200:
+          description: Stock agregado correctamente
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Product"
+
+  /products/{id}/transfer-kg:
+    post:
+      summary: Transferir stock KG entre local y depósito
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockTransferKgInput"
+      responses:
+        200:
+          description: Stock KG transferido correctamente
+
+  /products/{id}/add-stock-kg:
+    post:
+      summary: Agregar stock KG a local o depósito
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StockIngressKgInput"
+      responses:
+        200:
+          description: Stock KG agregado correctamente
+
+  /products/movements:
+    get:
+      summary: Listar historial de movimientos de stock
+      tags: [Products]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: productId
+          schema:
+            type: string
+          description: Filtrar por ID de producto
+        - in: query
+          name: userId
+          schema:
+            type: string
+          description: Filtrar por ID de usuario
+        - in: query
+          name: fromDate
+          schema:
+            type: string
+            format: date
+          description: Fecha inicial YYYY-MM-DD
+        - in: query
+          name: toDate
+          schema:
+            type: string
+            format: date
+          description: Fecha final YYYY-MM-DD
+      responses:
+        200:
+          description: Lista de movimientos de stock
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StockMovement"
+
+components:
+  schemas:
+    ProductCategory:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+
+    ProductComponentInput:
+      type: object
+      properties:
+        componentId:
+          type: string
+          example: uuid-coca
+        quantity:
+          type: number
+          nullable: true
+          example: 1
+        quantityKg:
+          type: number
+          nullable: true
+          example: 0.25
+
+    ProductComponent:
+      type: object
+      properties:
+        id:
+          type: string
+        compositeId:
+          type: string
+        componentId:
+          type: string
+        quantity:
+          type: number
+          nullable: true
+        quantityKg:
+          type: number
+          nullable: true
+        component:
+          $ref: "#/components/schemas/Product"
+
+    ProductInput:
+      type: object
+      required:
+        - name
+        - sku
+        - type
+        - saleUnit
+      properties:
+        name:
+          type: string
+          example: Promo Fernet + Coca
+        sku:
+          type: string
+          example: PROMO-FERNET-COCA
+        type:
+          type: string
+          enum: [SIMPLE, COMPUESTO]
+          example: COMPUESTO
+        categoryId:
+          type: string
+          nullable: true
+          example: uuid-categoria-promos
+        saleUnit:
+          type: string
+          enum: [UNIT, KG]
+          example: UNIT
+
+        price:
+          type: number
+          example: 12000
+        wholesalePrice:
+          type: number
+          example: 12000
+        clientPrice:
+          type: number
+          example: 12000
+        purchasePrice:
+          type: number
+          description: Costo de compra. Para UNIT es costo por unidad; para KG es costo por kilogramo.
+          example: 7500
+
+        pricePerKg:
+          type: number
+          nullable: true
+        wholesalePricePerKg:
+          type: number
+          nullable: true
+        clientPricePerKg:
+          type: number
+          nullable: true
+
+        minStock:
+          type: integer
+          nullable: true
+          example: 10
+        stockLocal:
+          type: integer
+          example: 20
+        stockDeposito:
+          type: integer
+          example: 50
+
+        minStockKg:
+          type: number
+          nullable: true
+        stockLocalKg:
+          type: number
+          nullable: true
+        stockDepositoKg:
+          type: number
+          nullable: true
+
+        image:
+          type: string
+          format: binary
+
+        components:
+          type: array
+          description: Solo para productos COMPUESTOS
+          items:
+            $ref: "#/components/schemas/ProductComponentInput"
+
+    ProductUpdateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        sku:
+          type: string
+        type:
+          type: string
+          enum: [SIMPLE, COMPUESTO]
+        categoryId:
+          type: string
+          nullable: true
+        saleUnit:
+          type: string
+          enum: [UNIT, KG]
+        price:
+          type: number
+        wholesalePrice:
+          type: number
+        clientPrice:
+          type: number
+        purchasePrice:
+          type: number
+        pricePerKg:
+          type: number
+        wholesalePricePerKg:
+          type: number
+        clientPricePerKg:
+          type: number
+        minStock:
+          type: integer
+        stockLocal:
+          type: integer
+        stockDeposito:
+          type: integer
+        minStockKg:
+          type: number
+        stockLocalKg:
+          type: number
+        stockDepositoKg:
+          type: number
+        isActive:
+          type: boolean
+
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        type:
+          type: string
+          enum: [SIMPLE, COMPUESTO]
+        sku:
+          type: string
+        categoryId:
+          type: string
+          nullable: true
+        category:
+          nullable: true
+          $ref: "#/components/schemas/ProductCategory"
+        saleUnit:
+          type: string
+          enum: [UNIT, KG]
+
+        price:
+          type: number
+        wholesalePrice:
+          type: number
+        clientPrice:
+          type: number
+        purchasePrice:
+          type: number
+          description: Costo de compra actual del producto
+
+        pricePerKg:
+          type: number
+          nullable: true
+        wholesalePricePerKg:
+          type: number
+          nullable: true
+        clientPricePerKg:
+          type: number
+          nullable: true
+
+        minStock:
+          type: integer
+          nullable: true
+        stockLocal:
+          type: integer
+        stockDeposito:
+          type: integer
+
+        minStockKg:
+          type: number
+          nullable: true
+        stockLocalKg:
+          type: number
+        stockDepositoKg:
+          type: number
+
+        imageUrl:
+          type: string
+          nullable: true
+        imageId:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        components:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProductComponent"
+        createdAt:
+          type: string
+          format: date-time
+
+    StockTransferInput:
+      type: object
+      required:
+        - productId
+        - from
+        - quantity
+      properties:
+        productId:
+          type: string
+          format: uuid
+          example: uuid-coca
+        from:
+          type: string
+          enum: [LOCAL, DEPOSITO]
+          example: DEPOSITO
+        quantity:
+          type: integer
+          example: 20
+
+    StockIngressInput:
+      type: object
+      required:
+        - productId
+        - to
+        - quantity
+      properties:
+        productId:
+          type: string
+          format: uuid
+          example: uuid-coca
+        to:
+          type: string
+          enum: [LOCAL, DEPOSITO]
+          example: LOCAL
+        quantity:
+          type: integer
+          example: 100
+
+    StockTransferKgInput:
+      type: object
+      required:
+        - from
+        - quantityKg
+      properties:
+        from:
+          type: string
+          enum: [LOCAL, DEPOSITO]
+          example: DEPOSITO
+        quantityKg:
+          type: number
+          example: 2.5
+
+    StockIngressKgInput:
+      type: object
+      required:
+        - to
+        - quantityKg
+      properties:
+        to:
+          type: string
+          enum: [LOCAL, DEPOSITO]
+          example: LOCAL
+        quantityKg:
+          type: number
+          example: 5.25
+
+    StockMovement:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        productId:
+          type: string
+        product:
+          $ref: "#/components/schemas/Product"
+        userId:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+            email:
+              type: string
+        type:
+          type: string
+          enum: [TRANSFER, INGRESS, ADJUSTMENT, SALE, SALE_CANCEL]
+        from:
+          type: string
+          enum: [LOCAL, DEPOSITO]
+          nullable: true
+        to:
+          type: string
+          enum: [LOCAL, DEPOSITO]
+          nullable: true
+        quantity:
+          type: integer
+          nullable: true
+        quantityKg:
+          type: number
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        reference:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time

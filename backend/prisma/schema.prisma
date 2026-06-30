@@ -1,0 +1,1104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================================================================
+// MULTI-TENANCY
+// ComarPOS es una plataforma SaaS: cada negocio cliente es un `Business`,
+// resuelto por subdominio (ver backend/src/middleware/tenant.ts).
+// Diseño de SUPER_ADMIN: el rol SUPER_ADMIN es global a la plataforma y
+// NO pertenece a ningún Business (businessId es nullable en User
+// específicamente para permitir este caso). Toda otra fila de datos
+// transaccional/catálogo SIEMPRE tiene businessId no-nulo.
+// =====================================================================
+
+model Business {
+  id                 String         @id @default(uuid())
+  name               String
+  slug               String         @unique
+  subdomain          String         @unique
+  cuit               String?
+  rubro              String?
+  plan               BusinessPlan   @default(BASICO)
+  status             BusinessStatus @default(TRIAL)
+  modulosActivos     String[]       @default([])
+  fechaAlta          DateTime       @default(now())
+  proximoVencimiento DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  users             User[]
+  products          Product[]
+  productCategories ProductCategory[]
+  clients           Client[]
+  sales             Sale[]
+  purchases         Purchase[]
+  purchaseItems     PurchaseItem[]
+  saleItems         SaleItem[]
+  businessLocations BusinessLocation[]
+  arcaConfigs       ArcaConfig[]
+  invoicesAfip      InvoiceAfip[]
+  finances          Finance[]
+  suppliers         Supplier[]
+  purchaseOrders    PurchaseOrder[]
+  supplierMovements SupplierAccountMovement[]
+  cashSessions      CashSession[]
+  accountMovements  AccountMovement[]
+  stockMovements    StockMovement[]
+  alerts            Alert[]
+  productStats      ProductStats[]
+  remitos           Remito[]
+  invoices          Invoice[]
+  boxContents       BoxContent[]
+  salePayments      SalePayment[]
+  productComponents ProductComponent[]
+  cbteCounters      CbteCounter[]
+
+  @@index([subdomain])
+  @@index([slug])
+  @@index([status])
+}
+
+model User {
+  id                   String            @id @default(uuid())
+  businessId           String?
+  email                String            @unique
+  password             String
+  name                 String
+  role                 Role
+  isActive             Boolean           @default(true)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  passwordResetExpires DateTime?
+  passwordResetToken   String?           @unique
+  mustChangePassword   Boolean           @default(false)
+  defaultStockLocation Location?
+  defaultPriceCategory String?
+  business             Business?         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accountMovements     AccountMovement[]
+  client               Client?
+  remitos              Remito[]
+  Sale                 Sale[]
+  StockMovements       StockMovement[]
+  purchases            Purchase[]
+  cashSessions         CashSession[]
+
+  @@index([role])
+  @@index([isActive])
+  @@index([passwordResetToken])
+  @@index([businessId])
+}
+
+model Client {
+  id                String            @id @default(uuid())
+  businessId        String
+  nombre            String
+  apellido          String
+  dni               String
+  telefono          String?
+  gmail             String?
+  category          CategoryClient    @default(Price)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  userId            String?           @unique
+  currentBalance    Float             @default(0)
+  creditLimit       Float?
+  isAccountEnabled  Boolean           @default(false)
+  addressApartment  String?
+  addressCity       String?
+  addressFloor      String?
+  addressNotes      String?
+  addressNumber     String?
+  addressPostalCode String?
+  addressProvince   String?
+  addressStreet     String?
+  latitude          Float?
+  longitude         Float?
+  business          Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accountMovements  AccountMovement[]
+  user              User?             @relation(fields: [userId], references: [id])
+  remitos           Remito[]
+  sales             Sale[]
+
+  @@unique([businessId, dni])
+  @@unique([businessId, gmail])
+  @@index([dni])
+  @@index([gmail])
+  @@index([category])
+  @@index([userId])
+  @@index([businessId])
+}
+
+model BusinessLocation {
+  id                String               @id @default(uuid())
+  businessId        String
+  name              String
+  type              BusinessLocationType @default(BRANCH)
+  addressStreet     String?
+  addressNumber     String?
+  addressCity       String?
+  addressProvince   String?
+  addressPostalCode String?
+  addressNotes      String?
+  latitude          Float?
+  longitude         Float?
+  isDefault         Boolean              @default(false)
+  isActive          Boolean              @default(true)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  business          Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  remitos           Remito[]
+  sales             Sale[]
+  cashSessions      CashSession[]
+
+  @@index([type])
+  @@index([isDefault])
+  @@index([isActive])
+  @@index([businessId])
+}
+
+model ProductCategory {
+  id          String    @id @default(uuid())
+  businessId  String
+  name        String
+  slug        String
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  business    Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  products    Product[]
+
+  @@unique([businessId, slug])
+  @@index([slug])
+  @@index([isActive])
+  @@index([businessId])
+}
+
+model Product {
+  id                  String              @id @default(uuid())
+  businessId          String
+  name                String
+  description         String?
+  type                ProductType         @default(SIMPLE)
+  price               Float
+  wholesalePrice      Float
+  clientPrice         Float
+  minStock            Int?
+  stockLocal          Int                 @default(0)
+  stockDeposito       Int                 @default(0)
+  categoryId          String?
+  imageUrl            String?
+  imageId             String?
+  isActive            Boolean             @default(true)
+  sku                 String?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  saleUnit            SaleUnit            @default(UNIT)
+  pricePerKg          Float?
+  wholesalePricePerKg Float?
+  clientPricePerKg    Float?
+  stockLocalKg        Float               @default(0)
+  stockDepositoKg     Float               @default(0)
+  minStockKg          Float?              @default(0)
+  purchasePrice       Float               @default(0)
+  isService           Boolean             @default(false)
+  minStockDeposito    Int?
+  minStockDepositoKg  Float?
+  ivaPorcentaje       Float               @default(21)
+  business            Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  alerts              Alert[]
+  BoxContent          BoxContent[]
+  category            ProductCategory?    @relation(fields: [categoryId], references: [id])
+  usedIn              ProductComponent[]  @relation("ComponentProduct")
+  components          ProductComponent[]  @relation("CompositeProduct")
+  stats               ProductStats[]
+  remitoItems         RemitoItem[]
+  SaleItem            SaleItem[]
+  StockMovement       StockMovement[]
+  purchaseItems       PurchaseItem[]
+  purchaseOrderItems  PurchaseOrderItem[]
+
+  @@unique([businessId, sku])
+  @@index([sku])
+  @@index([categoryId])
+  @@index([type])
+  @@index([isActive])
+  @@index([businessId])
+}
+
+model ProductComponent {
+  id          String   @id @default(uuid())
+  businessId  String
+  compositeId String
+  componentId String
+  quantity    Int?
+  quantityKg  Float?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  business    Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  component   Product  @relation("ComponentProduct", fields: [componentId], references: [id])
+  composite   Product  @relation("CompositeProduct", fields: [compositeId], references: [id], onDelete: Cascade)
+
+  @@unique([compositeId, componentId])
+  @@index([componentId])
+  @@index([businessId])
+}
+
+// ArcaConfig: 1:1 con Business (un Business puede tener varios puntos de
+// venta dentro de su propio ArcaConfig vía ArcaPointOfSale).
+model ArcaConfig {
+  id                 String            @id @default(uuid())
+  businessId         String            @unique
+  businessName       String
+  cuit               String
+  ivaCondition       String?
+  environment        ArcaEnvironment   @default(HOMOLOGACION)
+  status             ArcaConfigStatus  @default(INACTIVE)
+  certEncrypted      String?
+  keyEncrypted       String?
+  certExpiresAt      DateTime?
+  lastTokenAt        DateTime?
+  lastCheckAt        DateTime?
+  lastError          String?
+  isActive           Boolean           @default(false)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  activityStart      DateTime?
+  certAlias          String?
+  defaultConcept     Int               @default(1)
+  defaultCurrencyId  String            @default("PES")
+  defaultPointOfSale Int?
+  fiscalAddress      String?
+  iibb               String?
+  lastSuccessAt      DateTime?
+  scope              String            @unique
+  csrEncrypted       String?
+  csrGeneratedAt     DateTime?
+  business           Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  tokens             AfipToken[]
+  auditLogs          ArcaAuditLog[]
+  pointsOfSale       ArcaPointOfSale[]
+  remitos            Remito[]
+  remitoCais         RemitoCaiConfig[]
+
+  @@index([cuit])
+  @@index([isActive])
+  @@index([environment])
+  @@index([status])
+  @@index([businessId])
+}
+
+model AfipToken {
+  id             String     @id @default(uuid())
+  arcaConfigId   String
+  expiration     DateTime
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  service        String     @default("wsfe")
+  signEncrypted  String
+  tokenEncrypted String
+  arcaConfig     ArcaConfig @relation(fields: [arcaConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([arcaConfigId, service])
+  @@index([expiration])
+}
+
+model ArcaPointOfSale {
+  id               String     @id @default(uuid())
+  arcaConfigId     String
+  number           Int
+  description      String?
+  enabled          Boolean    @default(true)
+  isDefault        Boolean    @default(false)
+  enabledCbteTypes Int[]      @default([])
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+  arcaConfig       ArcaConfig @relation(fields: [arcaConfigId], references: [id], onDelete: Cascade)
+
+  @@unique([arcaConfigId, number])
+  @@index([number])
+  @@index([enabled])
+}
+
+model RemitoCaiConfig {
+  id           String     @id @default(uuid())
+  arcaConfigId String
+  mode         RemitoMode @default(PREPRINTED_FORM)
+  pointOfSale  Int
+  cai          String
+  expiresAt    DateTime
+  rangeFrom    Int?
+  rangeTo      Int?
+  nextNumber   Int?
+  enabled      Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  remitos      Remito[]
+  arcaConfig   ArcaConfig @relation(fields: [arcaConfigId], references: [id], onDelete: Cascade)
+
+  @@index([pointOfSale])
+  @@index([enabled])
+  @@index([expiresAt])
+}
+
+model Remito {
+  id                    String            @id @default(uuid())
+  businessId            String
+  saleId                String?
+  clientId              String?
+  userId                String?
+  businessLocationId    String?
+  arcaConfigId          String?
+  remitoCaiConfigId     String?
+  status                RemitoStatus      @default(ISSUED)
+  mode                  RemitoMode        @default(DIGITAL_FULL)
+  pointOfSale           Int
+  number                Int
+  fullNumber            String
+  code                  String            @default("91")
+  issueDate             DateTime          @default(now())
+  placeOfIssue          String?
+  cai                   String?
+  caiExpiresAt          DateTime?
+  caiRangeFrom          Int?
+  caiRangeTo            Int?
+  businessName          String?
+  businessCuit          String?
+  businessIvaCondition  String?
+  businessIibb          String?
+  businessActivityStart DateTime?
+  businessFiscalAddress String?
+  businessAddress       String?
+  businessEmail         String?
+  businessPhone         String?
+  clientName            String?
+  clientDni             String?
+  clientCuit            String?
+  clientIvaCondition    String?
+  clientAddress         String?
+  clientLocality        String?
+  sellerName            String?
+  saleCondition         String?
+  transportName         String?
+  transportCuit         String?
+  packagesCount         Int?
+  declaredValue         Float?
+  observations          String?
+  pdfUrl                String?
+  createdAt             DateTime          @default(now())
+  updatedAt             DateTime          @updatedAt
+  business              Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  arcaConfig            ArcaConfig?       @relation(fields: [arcaConfigId], references: [id])
+  businessLocation      BusinessLocation? @relation(fields: [businessLocationId], references: [id])
+  client                Client?           @relation(fields: [clientId], references: [id])
+  remitoCaiConfig       RemitoCaiConfig?  @relation(fields: [remitoCaiConfigId], references: [id])
+  sale                  Sale?             @relation(fields: [saleId], references: [id])
+  user                  User?             @relation(fields: [userId], references: [id])
+  items                 RemitoItem[]
+
+  @@unique([businessId, pointOfSale, number])
+  @@unique([businessId, fullNumber])
+  @@index([saleId])
+  @@index([clientId])
+  @@index([userId])
+  @@index([businessLocationId])
+  @@index([arcaConfigId])
+  @@index([remitoCaiConfigId])
+  @@index([status])
+  @@index([issueDate])
+  @@index([businessId])
+}
+
+model RemitoItem {
+  id          String   @id @default(uuid())
+  remitoId    String
+  productId   String?
+  code        String?
+  description String
+  quantity    Int?
+  quantityKg  Float?
+  saleUnit    SaleUnit @default(UNIT)
+  createdAt   DateTime @default(now())
+  product     Product? @relation(fields: [productId], references: [id])
+  remito      Remito   @relation(fields: [remitoId], references: [id], onDelete: Cascade)
+
+  @@index([remitoId])
+  @@index([productId])
+}
+
+model ArcaAuditLog {
+  id           String          @id @default(uuid())
+  arcaConfigId String?
+  userId       String?
+  action       ArcaAuditAction
+  detail       String?
+  ip           String?
+  createdAt    DateTime        @default(now())
+  arcaConfig   ArcaConfig?     @relation(fields: [arcaConfigId], references: [id])
+
+  @@index([arcaConfigId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model CbteCounter {
+  id         String   @id @default(uuid())
+  businessId String
+  ptoVta     Int
+  cbteTipo   Int
+  lastNumber Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, ptoVta, cbteTipo])
+  @@index([businessId])
+}
+
+model InvoiceAfip {
+  id                   String        @id @default(uuid())
+  businessId           String
+  saleId               String?       @unique
+  relatedInvoiceId     String?
+  cuit                 String
+  puntoVenta           Int
+  tipoComprobante      Int
+  tipoDoc              Int
+  nroDoc               BigInt
+  numero               Int
+  fechaEmision         DateTime
+  resultado            String
+  cae                  String?
+  caeVto               DateTime?
+  total                Float
+  neto                 Float
+  iva                  Float
+  condicionIVAReceptor Int
+  moneda               String        @default("PES")
+  urlQR                String?
+  qrBase64             String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  business             Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  relatedInvoice       InvoiceAfip?  @relation("CreditNoteRelation", fields: [relatedInvoiceId], references: [id])
+  creditNotes          InvoiceAfip[] @relation("CreditNoteRelation")
+  sale                 Sale?         @relation(fields: [saleId], references: [id])
+
+  @@unique([businessId, puntoVenta, tipoComprobante, numero])
+  @@index([cuit, puntoVenta, tipoComprobante])
+  @@index([businessId])
+}
+
+model Sale {
+  id                      String            @id @default(uuid())
+  businessId              String
+  userId                  String?
+  clientId                String?
+  gmailSend               String?
+  subtotal                Float             @default(0)
+  total                   Float             @default(0)
+  discountType            DiscountType?
+  discountValue           Float?
+  isInvoiced              Boolean           @default(false)
+  isNoteCredit            Boolean           @default(false)
+  invoiceStatus           InvoiceStatus     @default(NONE)
+  afipLastError           String?
+  nextRetryAt             DateTime?
+  retryCount              Int               @default(0)
+  afipPayloadJson         Json?
+  paymentMethod           PaymentMethod
+  receiptType             ReceiptType
+  status                  SaleStatus        @default(PENDING)
+  isAccountSale           Boolean           @default(false)
+  accountDebtAmount       Float             @default(0)
+  isWebSale               Boolean           @default(false)
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+  pdfUrl                  String?
+  stockLocation           Location          @default(LOCAL)
+  quotationExpiredAt      DateTime?
+  quotationExpiresAt      DateTime?
+  quotationPdfUrl         String?
+  grossProfit             Float             @default(0)
+  businessLocationId      String?
+  declaredValue           Float?
+  deliveryAddressSnapshot String?
+  deliveryCost            Float             @default(0)
+  deliveryDistanceKm      Float?
+  deliveryMethod          DeliveryMethod    @default(PICKUP)
+  deliveryStatus          DeliveryStatus    @default(NONE)
+  packagesCount           Int?
+  transportCuit           String?
+  transportName           String?
+  deliveryPricePerKm      Float?
+  business                Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  accountMovements        AccountMovement[]
+  invoice                 Invoice?
+  invoiceAfip             InvoiceAfip?
+  remitos                 Remito[]
+  businessLocation        BusinessLocation? @relation(fields: [businessLocationId], references: [id])
+  client                  Client?           @relation(fields: [clientId], references: [id])
+  user                    User?             @relation(fields: [userId], references: [id])
+  items                   SaleItem[]
+  payments                SalePayment[]
+
+  @@index([quotationExpiresAt])
+  @@index([clientId])
+  @@index([userId])
+  @@index([businessLocationId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([businessId])
+}
+
+model SaleItem {
+  id                    String            @id @default(uuid())
+  businessId            String
+  saleId                String
+  productId             String
+  quantity              Int
+  quantityKg            Float?
+  price                 Float
+  priceType             SaleItemPriceType @default(PRICE)
+  subtotal              Float             @default(0)
+  productNameSnapshot   String?
+  productSkuSnapshot    String?
+  createdAt             DateTime          @default(now())
+  profit                Float             @default(0)
+  purchasePriceSnapshot Float             @default(0)
+  ivaPorcentajeSnapshot Float             @default(21)
+  business              Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  boxContents           BoxContent[]
+  product               Product           @relation(fields: [productId], references: [id])
+  sale                  Sale              @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([priceType])
+  @@index([businessId])
+}
+
+model BoxContent {
+  id         String   @id @default(uuid())
+  businessId String
+  saleItemId String
+  productId  String
+  quantity   Int?
+  quantityKg Float?
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+  saleItem   SaleItem @relation(fields: [saleItemId], references: [id], onDelete: Cascade)
+
+  @@index([saleItemId])
+  @@index([productId])
+}
+
+model SalePayment {
+  id         String        @id @default(uuid())
+  businessId String
+  saleId     String
+  method     PaymentMethod
+  amount     Float
+  reference  String?
+  notes      String?
+  createdAt  DateTime      @default(now())
+  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sale       Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([saleId])
+  @@index([method])
+}
+
+model AccountMovement {
+  id              String              @id @default(uuid())
+  businessId      String
+  clientId        String
+  saleId          String?
+  userId          String?
+  type            AccountMovementType
+  amount          Float
+  previousBalance Float
+  newBalance      Float
+  paymentMethod   PaymentMethod?
+  reference       String?
+  description     String?
+  date            DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+  business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  client          Client              @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  sale            Sale?               @relation(fields: [saleId], references: [id])
+  user            User?               @relation(fields: [userId], references: [id])
+
+  @@index([clientId])
+  @@index([saleId])
+  @@index([type])
+  @@index([date])
+  @@index([businessId])
+}
+
+model Alert {
+  id         String   @id @default(uuid())
+  businessId String
+  productId  String
+  message    String
+  createdAt  DateTime @default(now())
+  resolved   Boolean  @default(false)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([resolved])
+  @@index([businessId])
+}
+
+model ProductStats {
+  id         String   @id @default(uuid())
+  businessId String
+  productId  String
+  quantity   Int?
+  quantityKg Float?
+  date       DateTime @default(now())
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  product    Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([date])
+  @@index([businessId])
+}
+
+model Finance {
+  id            String          @id @default(uuid())
+  businessId    String
+  type          FinanceType
+  amount        Float
+  category      CategoryFinance
+  paymentMethod PaymentMethod?
+  description   String?
+  date          DateTime
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  business      Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  purchase      Purchase?
+
+  @@index([type])
+  @@index([category])
+  @@index([date])
+  @@index([businessId])
+}
+
+model StockMovement {
+  id               String       @id @default(uuid())
+  businessId       String
+  productId        String
+  userId           String?
+  purchaseId       String?
+  type             MovementType
+  from             Location?
+  to               Location?
+  quantity         Int?
+  quantityKg       Float?
+  reason           String?
+  reference        String?
+  isClientMovement Boolean      @default(false)
+  createdAt        DateTime     @default(now())
+  business         Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  product          Product      @relation(fields: [productId], references: [id])
+  user             User?        @relation(fields: [userId], references: [id])
+  purchase         Purchase?    @relation(fields: [purchaseId], references: [id])
+
+  @@index([productId])
+  @@index([userId])
+  @@index([purchaseId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([businessId])
+}
+
+model Supplier {
+  id               String                    @id @default(uuid())
+  businessId       String
+  name             String
+  cuit             String?
+  contacto         String?
+  telefono         String?
+  email            String?
+  condicionPago    String?
+  notes            String?
+  isActive         Boolean                   @default(true)
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+  business         Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  purchases        Purchase[]
+  purchaseOrders   PurchaseOrder[]
+  accountMovements SupplierAccountMovement[]
+
+  @@unique([businessId, cuit])
+  @@index([businessId])
+  @@index([isActive])
+}
+
+model PurchaseOrder {
+  id           String              @id @default(uuid())
+  businessId   String
+  supplierId   String
+  status       PurchaseOrderStatus @default(PENDIENTE)
+  expectedDate DateTime?
+  notes        String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  business     Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier     Supplier            @relation(fields: [supplierId], references: [id])
+  items        PurchaseOrderItem[]
+  purchases    Purchase[]
+
+  @@index([businessId])
+  @@index([supplierId])
+  @@index([status])
+}
+
+model PurchaseOrderItem {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String
+  productId        String
+  quantityOrdered  Float
+  quantityReceived Float         @default(0)
+  unitCost         Float
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  product          Product       @relation(fields: [productId], references: [id])
+
+  @@index([purchaseOrderId])
+  @@index([productId])
+}
+
+model SupplierAccountMovement {
+  id              String                      @id @default(uuid())
+  businessId      String
+  supplierId      String
+  purchaseId      String?
+  userId          String?
+  type            SupplierAccountMovementType
+  amount          Float
+  previousBalance Float
+  newBalance      Float
+  paymentMethod   PaymentMethod?
+  reference       String?
+  description     String?
+  date            DateTime                    @default(now())
+  createdAt       DateTime                    @default(now())
+  business        Business                    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier        Supplier                    @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  purchase        Purchase?                   @relation(fields: [purchaseId], references: [id])
+
+  @@index([supplierId])
+  @@index([purchaseId])
+  @@index([type])
+  @@index([date])
+  @@index([businessId])
+}
+
+model CashSession {
+  id                 String            @id @default(uuid())
+  businessId         String
+  businessLocationId String?
+  userId             String
+  montoApertura      Float
+  montoCierre        Float?
+  diferencia         Float?
+  observaciones      String?
+  status             CashSessionStatus @default(OPEN)
+  openedAt           DateTime          @default(now())
+  closedAt           DateTime?
+  business           Business          @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  businessLocation   BusinessLocation? @relation(fields: [businessLocationId], references: [id])
+  user               User              @relation(fields: [userId], references: [id])
+
+  @@index([businessId])
+  @@index([businessLocationId])
+  @@index([userId])
+  @@index([status])
+}
+
+model Purchase {
+  id              String         @id @default(uuid())
+  businessId      String
+  supplierId      String?
+  purchaseOrderId String?
+  invoiceNumber   String?
+  description     String?
+  totalAmount     Float          @default(0)
+  paymentMethod   PaymentMethod?
+  to              Location       @default(DEPOSITO)
+  date            DateTime       @default(now())
+  status          PurchaseStatus @default(COMPLETED)
+  userId          String?
+  financeId       String?        @unique
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  business                 Business                  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier                 Supplier?                 @relation(fields: [supplierId], references: [id])
+  purchaseOrder            PurchaseOrder?            @relation(fields: [purchaseOrderId], references: [id])
+  user                     User?                     @relation(fields: [userId], references: [id])
+  finance                  Finance?                  @relation(fields: [financeId], references: [id])
+  items                    PurchaseItem[]
+  stockMovements           StockMovement[]
+  supplierAccountMovements SupplierAccountMovement[]
+
+  @@index([userId])
+  @@index([financeId])
+  @@index([status])
+  @@index([date])
+  @@index([businessId])
+  @@index([supplierId])
+  @@index([purchaseOrderId])
+}
+
+model PurchaseItem {
+  id                  String   @id @default(uuid())
+  businessId          String
+  purchaseId          String
+  productId           String
+  quantity            Int?
+  quantityKg          Float?
+  unitCost            Float
+  subtotal            Float
+  productNameSnapshot String?
+  productSkuSnapshot  String?
+  createdAt           DateTime @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@index([purchaseId])
+  @@index([productId])
+  @@index([businessId])
+}
+
+model Invoice {
+  id         String   @id @default(uuid())
+  businessId String
+  saleId     String   @unique
+  pdfUrl     String?
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  sale       Sale     @relation(fields: [saleId], references: [id])
+
+  @@index([businessId])
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  EMPLEADO
+  CLIENTE
+  CONTADOR
+}
+
+enum BusinessPlan {
+  BASICO
+  PRO
+  ENTERPRISE
+}
+
+enum BusinessStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+}
+
+enum ArcaEnvironment {
+  HOMOLOGACION
+  PRODUCCION
+}
+
+enum ArcaConfigStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+  INCOMPLETE
+  CERT_EXPIRED
+}
+
+enum CategoryClient {
+  Price
+  Mayorista
+}
+
+enum ProductType {
+  SIMPLE
+  COMPUESTO
+}
+
+enum SaleUnit {
+  UNIT
+  KG
+}
+
+enum MovementType {
+  TRANSFER
+  INGRESS
+  ADJUSTMENT
+  SALE
+  SALE_CANCEL
+}
+
+enum Location {
+  LOCAL
+  DEPOSITO
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum InvoiceStatus {
+  NONE
+  PENDING_AFIP
+  INVOICED
+  ERROR
+}
+
+enum PaymentMethod {
+  EFECTIVO
+  TARJETA
+  TRANSFERENCIA
+  QR
+  DEBITO
+  CREDITO
+  QR_NACION
+  QR_MERCADOPAGO
+  TARJETA_DEBITO
+  TARJETA_CREDITO
+  CUENTA_CORRIENTE
+}
+
+enum ReceiptType {
+  TICKET
+  FACTURA
+}
+
+enum FinanceType {
+  INGRESO
+  EGRESO
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+enum PurchaseStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  PENDIENTE
+  APROBADA
+  RECIBIDA_PARCIAL
+  RECIBIDA_TOTAL
+  CANCELADA
+}
+
+enum SupplierAccountMovementType {
+  DEBT
+  PAYMENT
+  ADJUSTMENT_POSITIVE
+  ADJUSTMENT_NEGATIVE
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum AccountMovementType {
+  DEBT
+  PAYMENT
+  ADJUSTMENT_POSITIVE
+  ADJUSTMENT_NEGATIVE
+  CREDIT_NOTE
+}
+
+enum CategoryFinance {
+  VENTA
+  COBRANZA
+  CompraMercaderia
+  AlquilerL1
+  AlquilerF1
+  Alarma
+  Sueldos
+  MateriaPrima
+  Impuestos
+  VEP
+  Contadora
+  Arca
+  Eenvios
+  Publicidad
+  Otro
+}
+
+enum RemitoMode {
+  DIGITAL_FULL
+  PREPRINTED_FORM
+}
+
+enum RemitoStatus {
+  DRAFT
+  ISSUED
+  DELIVERED
+  CANCELLED
+}
+
+enum ArcaAuditAction {
+  CREATE_CONFIG
+  UPDATE_CONFIG
+  UPLOAD_CERTIFICATE
+  DELETE_CERTIFICATE
+  TEST_WSAA
+  TEST_WSFE_DUMMY
+  UPSERT_POINT_OF_SALE
+  DELETE_POINT_OF_SALE
+  UPSERT_REMITO_CAI
+  DELETE_REMITO_CAI
+}
+
+enum BusinessLocationType {
+  BRANCH
+  WAREHOUSE
+  STORE
+}
+
+enum DeliveryMethod {
+  PICKUP
+  LOCAL_DELIVERY
+  TRANSPORT
+}
+
+enum DeliveryStatus {
+  NONE
+  PENDING
+  PREPARING
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+enum SaleItemPriceType {
+  PRICE
+  WHOLESALE_PRICE
+  MANUAL
+}

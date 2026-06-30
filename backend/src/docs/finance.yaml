@@ -1,0 +1,441 @@
+tags:
+  - name: Finance
+    description: Endpoints para gestión financiera y estadísticas
+
+paths:
+  /finance:
+    get:
+      summary: "Listar todos los registros financieros"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      responses:
+        200:
+          description: "Lista de registros financieros"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Finance"
+
+    post:
+      summary: "Crear un registro financiero manual (ej: egreso)"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinanceInput"
+      responses:
+        201:
+          description: "Registro financiero creado"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Finance"
+
+  /finance/income/month:
+    get:
+      summary: "Obtener ingresos por mes"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+          example: 2025
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 8
+      responses:
+        200:
+          description: "Ingresos del mes"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  _sum:
+                    type: object
+                    properties:
+                      amount:
+                        type: number
+                        example: 12500
+
+  /finance/income/year:
+    get:
+      summary: "Obtener ingresos por año"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+          example: 2025
+      responses:
+        200:
+          description: "Ingresos del año"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  _sum:
+                    type: object
+                    properties:
+                      amount:
+                        type: number
+                        example: 150000
+
+  /finance/income/week:
+    get:
+      summary: "Obtener ingresos por semana"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+          example: 2025
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+          example: 8
+        - in: query
+          name: day
+          required: true
+          schema:
+            type: integer
+          example: 31
+      responses:
+        200:
+          description: "Ingresos de la semana"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  _sum:
+                    type: object
+                    properties:
+                      amount:
+                        type: number
+                        example: 4000
+
+  /finance/income/category:
+    get:
+      summary: "Obtener ingresos agrupados por categoría"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-01
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-31
+      responses:
+        200:
+          description: "Ingresos agrupados por categoría"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    category:
+                      type: string
+                    _sum:
+                      type: object
+                      properties:
+                        amount:
+                          type: number
+                          example: 10000
+
+  /finance/products/top:
+    get:
+      summary: "Obtener productos más vendidos"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 5
+          description: "Cantidad de productos a mostrar"
+      responses:
+        200:
+          description: "Lista de productos más vendidos"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductStats"
+
+  /finance/products/worst:
+    get:
+      summary: "Obtener productos menos vendidos"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 5
+          description: "Cantidad de productos a mostrar"
+      responses:
+        200:
+          description: "Lista de productos menos vendidos"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductStats"
+
+  /finance/products/top-range:
+    get:
+      summary: "Obtener productos más vendidos en un rango de fechas"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-01
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-31
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 5
+      responses:
+        200:
+          description: "Lista de productos más vendidos en rango"
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProductStats"
+
+  /finance/products/best-month:
+    get:
+      summary: "Obtener el producto más vendido de un mes específico"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+          example: 2025
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 5
+      responses:
+        200:
+          description: "Producto más vendido en el mes"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductStats"
+
+  /finance/products/worst-month:
+    get:
+      summary: "Obtener el producto menos vendido de un mes específico"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: year
+          required: true
+          schema:
+            type: integer
+          example: 2025
+        - in: query
+          name: month
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+          example: 5
+      responses:
+        200:
+          description: "Producto menos vendido en el mes"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProductStats"
+
+  /finance/export/excel:
+    get:
+      summary: "Exportar reporte financiero en Excel"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-01
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-31
+      responses:
+        200:
+          description: "Archivo Excel generado"
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /finance/export/pdf:
+    get:
+      summary: "Exportar reporte financiero en PDF"
+      tags: [Finance]
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-01
+        - in: query
+          name: to
+          required: true
+          schema:
+            type: string
+            format: date
+          example: 2025-01-31
+      responses:
+        200:
+          description: "Archivo PDF generado"
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+
+components:
+  schemas:
+    FinanceInput:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [INGRESO, EGRESO]
+          example: EGRESO
+        amount:
+          type: number
+          example: 5000
+        category:
+          type: string
+          example: "Insumos"
+        description:
+          type: string
+          example: "Compra de cajas de cartón"
+        date:
+          type: string
+          format: date-time
+
+    Finance:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [INGRESO, EGRESO]
+        amount:
+          type: number
+        category:
+          type: string
+        description:
+          type: string
+        date:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ProductStats:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+        _sum:
+          type: object
+          properties:
+            quantity:
+              type: integer
+        product:
+          $ref: "#/components/schemas/Product"
