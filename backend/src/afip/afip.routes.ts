@@ -502,6 +502,7 @@ router.post("/facturar", async (req, res) => {
         });
 
         await generarFacturaAfipPDF({
+          businessId: sale.businessId,
           tipoComprobante: Number(factura.tipoComprobante),
           puntoVenta: Number(factura.puntoVenta),
           saleId,
@@ -756,6 +757,7 @@ router.post("/nota-credito", async (req, res) => {
 
     try {
       await generarNotaCreditoAfipPDF({
+        businessId: facturaOriginal.businessId,
         saleId,
         tipoComprobante: notaCredito.tipoComprobante,
         puntoVenta: notaCredito.puntoVenta,

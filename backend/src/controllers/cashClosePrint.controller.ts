@@ -5,7 +5,11 @@ export async function printCashCloseController(req: Request, res: Response) {
   console.log("Iniciando impresión de cierre de caja...");
   
     try {
-    const result = await printCashClose(req.body);
+    if (!req.business) {
+      return res.status(404).json({ message: "Negocio no encontrado" });
+    }
+
+    const result = await printCashClose(req.body, req.business.id);
     console.log("PRINT BODY:", req.body);
     return res.status(200).json({
       message: "Cierre enviado a impresión",

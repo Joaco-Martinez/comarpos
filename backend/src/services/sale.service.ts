@@ -2238,6 +2238,7 @@ export const saleService = {
     const metodoPago = sale.payments?.length ? "MIXTO" : sale.paymentMethod;
 
     await generarTicketPedidoPDF({
+      businessId,
       saleId: sale.id,
       products,
       total: sale.total,

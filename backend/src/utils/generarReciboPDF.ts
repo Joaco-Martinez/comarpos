@@ -1,12 +1,12 @@
 
 import PDFDocument from "pdfkit";
-import axios from "axios";
 import fs from "fs";
 import path from "path";
+import { printboxService } from "../services/printbox.service";
 
-const POS_LOCAL_URL = process.env.POS_LOCAL_URL;
 type Product = { name: string; quantity: number; price: number; };
 export async function generarTicketPedidoPDF({
+  businessId,
   saleId,
   products,
   total,
@@ -17,6 +17,7 @@ export async function generarTicketPedidoPDF({
   cuit = "20-00000000-0",
   mensaje = "RECIBO / NOTA DE PEDIDO",
 }: {
+  businessId: string;
   saleId: string;
   products: Product[];
   total: number;
@@ -138,18 +139,30 @@ export async function generarTicketPedidoPDF({
 
       stream.on("finish", async () => {
         try {
-          if (POS_LOCAL_URL) {
-            const pdfBuffer = await fs.promises.readFile(filePath);
+          const items = products.map((p) => ({
+            name: p.name,
+            quantity: p.quantity,
+            price: p.price,
+            subtotal: p.quantity * p.price,
+          }));
 
-            await axios.post(
-              `${POS_LOCAL_URL}/print`,
-              {
-                pdfBase64: pdfBuffer.toString("base64"),
-                ticket: { saleId, total, metodoPago },
-              },
-              { headers: { "Content-Type": "application/json" }, timeout: 30000 }
-            );
-          }
+          await printboxService.enqueueJob(businessId, "RECEIPT", {
+            saleId,
+            receiptType: mensaje,
+            paymentMethod: metodoPago,
+            createdAt: new Date().toLocaleString("es-AR"),
+            business: {
+              name: razonSocial,
+              cuit,
+              address: direccion,
+            },
+            client: { name: nombreCliente },
+            items,
+            subtotal: items.reduce((acc, i) => acc + i.subtotal, 0),
+            discount: 0,
+            total,
+            footer: "Este ticket no es un comprobante fiscal.",
+          });
 
           resolve();
         } catch (err) {

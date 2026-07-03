@@ -1,8 +1,6 @@
-import axios from "axios";
 import prisma from "../prisma";
-import PDFDocument from "pdfkit";
-import { Buffer } from "buffer";
 import { dayRangeAR, rangeAR } from "../utils/dateAR";
+import { printboxService } from "./printbox.service";
 
 type CashClosePrintBody =
   | { date: string }
@@ -13,22 +11,6 @@ function isRangeBody(body: any): body is { from: string; to: string } {
 }
 function isDateBody(body: any): body is { date: string } {
   return typeof body?.date === "string";
-}
-
-async function textToPdfBase64(text: string) {
-  const doc = new PDFDocument({ size: [226, 1000], margin: 10 });
-  const chunks: Buffer[] = [];
-
-  doc.on("data", (c) => chunks.push(c));
-  const done = new Promise<Buffer>((resolve) =>
-    doc.on("end", () => resolve(Buffer.concat(chunks)))
-  );
-
-  doc.font("Courier").fontSize(9).text(text);
-  doc.end();
-
-  const pdfBuffer = await done;
-  return pdfBuffer.toString("base64");
 }
 
 function formatMoneyARS(n: number) {
@@ -138,29 +120,7 @@ function buildTicket(params: {
   return [...header, ...methods, ...footer].join("\n");
 }
 
-async function sendToLocalPrinter(payload: { text: string; meta?: any }) {
-  const localPOS = process.env.POS_LOCAL_URL;
-  if (!localPOS) throw new Error("POS_LOCAL_URL no configurado. No se puede imprimir.");
-
-  const pdfBase64 = await textToPdfBase64(payload.text);
-
-  await axios.post(
-    `${localPOS}/print`,
-    {
-      pdfBase64,
-      factura: {
-        tipo: "CASH_CLOSE",
-        ...payload.meta,
-      },
-    },
-    {
-      headers: { "Content-Type": "application/json" },
-      timeout: 60000,
-    }
-  );
-}
-
-export async function printCashClose(body: CashClosePrintBody) {
+export async function printCashClose(body: CashClosePrintBody, businessId: string) {
   let start: Date;
   let end: Date;
 
@@ -175,6 +135,7 @@ export async function printCashClose(body: CashClosePrintBody) {
   // ✅ MISMA FUENTE QUE LA UI: FINANCE
   const records = await prisma.finance.findMany({
     where: {
+      businessId,
       date: { gte: start, lte: end },
       type: "INGRESO",
     },
@@ -215,20 +176,7 @@ export async function printCashClose(body: CashClosePrintBody) {
 
   const ticket = buildTicket({ from: start, to: end, totalAmount, totalCount, byMethod });
 
-  // ✅ imprimir (descomentá)
-  await sendToLocalPrinter({
-    text: ticket,
-    meta: {
-      start: start.toISOString(),
-      end: end.toISOString(),
-      totalAmount,
-      totalCount,
-      byMethod,
-    },
-  });
-
-  // console.log("=== TICKET DE CIERRE DE CAJA (DESDE FINANCE) ===");
-  // console.log(ticket);
+  await printboxService.enqueueJob(businessId, "CASH_CLOSE", { raw: ticket });
 
   return { ok: true, start, end, totalAmount, totalCount, byMethod };
 }

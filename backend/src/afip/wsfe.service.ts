@@ -1,6 +1,5 @@
 import axios from "axios";
 import xml2js from "xml2js";
-import fs from "fs";
 import prisma from "../prisma";
 import { getValidToken } from "./wsaa.service";
 import { cbteCounterService } from "./cbteCounter.service";
@@ -61,29 +60,6 @@ function logAfipFull(result: any) {
   ];
 
   return allMsgs;
-}
-
-async function enviarAImpresion(pdfPath: string, facturaData: any) {
-  const localPOS = process.env.POS_LOCAL_URL; // Ej: http://192.168.0.50:3002 o https://pos-local.ngrok-free.app
-
-  if (!localPOS) {
-    console.warn("⚠️ POS_LOCAL_URL no configurado. No se enviará a impresión.");
-    return;
-  }
-
-  try {
-    const pdfBuffer = await fs.promises.readFile(pdfPath);
-    console.log("📦 Enviando PDF directamente al POS local...");
-
-    await axios.post(`${localPOS}/print`, {
-      pdfBase64: pdfBuffer.toString("base64"),
-      factura: facturaData,
-    });
-
-    console.log("🖨️ Enviada orden de impresión con PDF embebido.");
-  } catch (err: any) {
-    console.error("❌ Error al enviar a impresión:", err?.message || err);
-  }
 }
 
 // ===================== AFIP: ULTIMO COMPROBANTE =====================

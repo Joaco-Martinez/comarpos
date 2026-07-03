@@ -58,6 +58,8 @@ model Business {
   salePayments      SalePayment[]
   productComponents ProductComponent[]
   cbteCounters      CbteCounter[]
+  printbox          Printbox?
+  printJobs         PrintJob[]
 
   @@index([subdomain])
   @@index([slug])
@@ -895,6 +897,62 @@ model Invoice {
   sale       Sale     @relation(fields: [saleId], references: [id])
 
   @@index([businessId])
+}
+
+// Un Printbox es el dispositivo (ESP32 + W5500) que un negocio tiene
+// conectado a su impresora térmica. Se identifica únicamente por `token`:
+// el propio dispositivo nunca conoce ni envía su businessId, así que
+// estructuralmente no puede pedir (ni recibir) tickets de otro negocio.
+model Printbox {
+  id         String    @id @default(uuid())
+  businessId String    @unique
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name       String    @default("Printbox")
+  token      String    @unique
+  isActive   Boolean   @default(true)
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  printJobs PrintJob[]
+
+  @@index([token])
+}
+
+// Cola de impresión: cada vez que el backend necesita imprimir algo
+// (ticket de venta, factura, nota de crédito, cierre de caja, recibo) se
+// encola un PrintJob para el Printbox del negocio. El dispositivo hace
+// polling y consume estos jobs en orden (FIFO).
+model PrintJob {
+  id         String         @id @default(uuid())
+  businessId String
+  business   Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  printboxId String
+  printbox   Printbox       @relation(fields: [printboxId], references: [id], onDelete: Cascade)
+  type       PrintJobType
+  payload    Json
+  status     PrintJobStatus @default(PENDING)
+  error      String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+  printedAt  DateTime?
+
+  @@index([printboxId, status, createdAt])
+  @@index([businessId])
+}
+
+enum PrintJobType {
+  SALE_TICKET
+  INVOICE
+  CREDIT_NOTE
+  CASH_CLOSE
+  RECEIPT
+}
+
+enum PrintJobStatus {
+  PENDING
+  PRINTED
+  ERROR
 }
 
 enum Role {

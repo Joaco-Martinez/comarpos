@@ -1,11 +1,9 @@
 import PDFDocument from "pdfkit";
 import fs from "fs";
 import path from "path";
-import axios from "axios";
 import { uploadPDFtoCloudinary } from "../utils/uploadPDFtoCloudinary";
 import prisma from "../../prisma";
-
-const POS_LOCAL_URL = process.env.POS_LOCAL_URL; // ej: http://localhost:3002
+import { printboxService } from "../../services/printbox.service";
 
 type Product = {
   name: string;
@@ -13,7 +11,85 @@ type Product = {
   price: number;
 };
 
+function getLetraComprobanteNC(tipoComprobante: number): string {
+  if (tipoComprobante === 3) return "A";
+  if (tipoComprobante === 8) return "B";
+  return "C";
+}
+
+function buildTicketPayloadNC({
+  tipoComprobante,
+  puntoVenta,
+  numero,
+  fechaEmision,
+  nombreCliente,
+  total,
+  metodoPago,
+  cae,
+  caeVto,
+  products,
+  cuit,
+  razonSocial,
+  direccion,
+}: {
+  tipoComprobante: number;
+  puntoVenta: number;
+  numero: number;
+  fechaEmision: Date;
+  nombreCliente: string;
+  total: number;
+  metodoPago: string;
+  cae: string;
+  caeVto: Date;
+  products?: Product[];
+  cuit: string;
+  razonSocial: string;
+  direccion: string;
+}) {
+  const items = (products ?? []).map((p) => ({
+    name: p.name,
+    quantity: p.quantity,
+    price: p.price,
+    subtotal: p.quantity * p.price,
+  }));
+
+  return {
+    saleId: `NC-${String(puntoVenta).padStart(4, "0")}-${String(numero).padStart(8, "0")}`,
+    receiptType: `NOTA DE CRÉDITO ${getLetraComprobanteNC(tipoComprobante)}`,
+    paymentMethod: metodoPago,
+    createdAt: fechaEmision.toLocaleString("es-AR"),
+
+    business: {
+      name: process.env.BUSINESS_NAME ?? razonSocial ?? "ComarPOS",
+      subtitle: process.env.BUSINESS_SUBTITLE ?? "",
+      cuit: process.env.BUSINESS_CUIT ?? cuit,
+      address: process.env.BUSINESS_ADDRESS ?? direccion,
+      phone: process.env.BUSINESS_PHONE ?? "",
+    },
+
+    client: {
+      name: nombreCliente || "Consumidor Final",
+    },
+
+    items,
+    subtotal: items.reduce((acc, i) => acc + i.subtotal, 0),
+    discount: 0,
+    total,
+
+    afip: {
+      invoiceLetter: getLetraComprobanteNC(tipoComprobante),
+      pointOfSale: String(puntoVenta).padStart(4, "0"),
+      cbteNumber: String(numero).padStart(8, "0"),
+      cae,
+      caeExpiresAt: caeVto.toLocaleDateString("es-AR"),
+    },
+
+    footer: "Nota de crédito - documento sin valor fiscal como comprobante de compra",
+  };
+}
+
 export async function generarNotaCreditoAfipPDF({
+  businessId,
   tipoComprobante,
   puntoVenta,
   numero,
@@ -31,6 +107,7 @@ export async function generarNotaCreditoAfipPDF({
   qrBase64,
   products,
 }: {
+  businessId: string;
   tipoComprobante: number;
   puntoVenta: number;
   numero: number;
@@ -187,30 +264,24 @@ export async function generarNotaCreditoAfipPDF({
         try {
           console.log("🧾 Nota de crédito generada:", filePath);
 
-          // 🖨️ Imprimir localmente (si hay POS activo)
-          if (POS_LOCAL_URL) {
-            const pdfBuffer = await fs.promises.readFile(filePath);
-            await axios.post(
-              `${POS_LOCAL_URL}/print`,
-              {
-                pdfBase64: pdfBuffer.toString("base64"),
-                factura: {
-                  numero,
-                  total,
-                  metodoPago,
-                  fechaEmision,
-                  cae,
-                },
-              },
-              {
-                headers: { "Content-Type": "application/json" },
-                timeout: 60000,
-              }
-            );
-            console.log("🖨️ Nota de crédito enviada al POS local para impresión");
-          } else {
-            console.warn("⚠️ POS_LOCAL_URL no configurado, no se imprimió localmente");
-          }
+          // 🖨️ Encolar impresión en el Printbox del negocio
+          const ticketPayload = buildTicketPayloadNC({
+            tipoComprobante,
+            puntoVenta,
+            numero,
+            fechaEmision,
+            nombreCliente,
+            total,
+            metodoPago,
+            cae,
+            caeVto,
+            products,
+            cuit,
+            razonSocial,
+            direccion,
+          });
+
+          await printboxService.enqueueJob(businessId, "CREDIT_NOTE", ticketPayload);
 
           // ☁️ Subir a Cloudinary
           const pdfUrl = await uploadPDFtoCloudinary(filePath);

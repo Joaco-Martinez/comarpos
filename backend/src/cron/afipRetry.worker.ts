@@ -79,6 +79,7 @@ export async function processAfipPendingInvoices() {
       // Si aprobó => PDF + estado OK
       if (factura.resultado === "A" && factura.cae) {
         await generarFacturaAfipPDF({
+          businessId: sale.businessId,
           tipoComprobante: factura.tipoComprobante,
           puntoVenta: factura.puntoVenta,
           saleId,

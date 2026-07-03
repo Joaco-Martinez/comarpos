@@ -50,10 +50,23 @@ function isSuperAdminPath(req: Request): boolean {
   return req.path.startsWith("/super-admin");
 }
 
+// Rutas que llama el dispositivo Printbox (ESP32) directamente: se
+// autentican con su propio Bearer token (ver printboxAuth middleware), no
+// con subdominio, así que no deben pasar por la resolución de tenant.
+function isPrintboxDevicePath(req: Request): boolean {
+  return req.path.startsWith("/printbox/poll") || req.path.startsWith("/printbox/ack");
+}
+
 export async function tenantMiddleware(req: Request, res: Response, next: NextFunction) {
   // Rutas de plataforma (super-admin) y health-check: no requieren tenant.
   if (isSuperAdminPath(req) || req.path === "/health" || req.path === "/") {
     req.isSuperAdminContext = true;
+    return next();
+  }
+
+  // Rutas del dispositivo Printbox: se autentican con su propio Bearer
+  // token, no con subdominio.
+  if (isPrintboxDevicePath(req)) {
     return next();
   }
 

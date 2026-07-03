@@ -33,6 +33,8 @@ import arcaConfigRoutes from "./routes/arcaConfig.routes";
 import ticketRoutes from "./routes/ticket.routes";
 import supplierRoutes from "./routes/supplier.routes";
 import supplierAccountRoutes from "./routes/supplierAccount.routes";
+import printboxRoutes from "./routes/printbox.routes";
+import printboxAdminRoutes from "./routes/printboxAdmin.routes";
 dotenv.config();
 
 const app = express();
@@ -159,6 +161,8 @@ app.use("/nota-credito-pdf", notaCreditoPdfRoutes);
 app.use("/finance", financeRoutes);
 app.use("/clients", clientRouter);
 app.use("/cash-close", cashClosePrintRouter);
+app.use("/printbox", printboxRoutes);
+app.use("/printbox-admin", printboxAdminRoutes);
 app.use("/business-locations", businessLocationRoutes);
 app.use("/tickets", ticketRoutes);
 app.use("/remitos", remitoRoutes);

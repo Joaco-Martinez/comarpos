@@ -1,9 +1,9 @@
 import PDFDocument from "pdfkit";
-import axios from "axios";
 import fs from "fs";
 import path from "path";
 import { uploadPDFtoCloudinary } from "../utils/uploadPDFtoCloudinary";
 import prisma from "../../prisma";
+import { printboxService } from "../../services/printbox.service";
 
 type Product = {
   name: string;
@@ -15,8 +15,6 @@ type Product = {
 
 type TipoCliente = "Consumidor Final" | "Cliente" | "Mayorista";
 
-const POS_LOCAL_URL = process.env.POS_LOCAL_URL;
-const POS_LOCAL_TOKEN = process.env.POS_LOCAL_TOKEN;
 const PAGE_WIDTH = 226;
 
 function getLetraComprobante(tipoComprobante: number): string {
@@ -242,29 +240,8 @@ function buildTicketPayload({
   };
 }
 
-async function enviarTicketAlPOSLocal(payload: any) {
-  if (!POS_LOCAL_URL) {
-    console.warn("⚠️ POS_LOCAL_URL no configurado, no se imprimió localmente");
-    return;
-  }
-
-  const url = `${POS_LOCAL_URL.replace(/\/$/, "")}/print/ticket`;
-
-  console.log("🖨️ Enviando ticket JSON al POS local:", url);
-  console.log("📦 Payload enviado:", JSON.stringify(payload, null, 2));
-
-  await axios.post(url, payload, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(POS_LOCAL_TOKEN ? { "x-pos-token": POS_LOCAL_TOKEN } : {}),
-    },
-    timeout: 60000,
-  });
-
-  console.log("✅ Ticket enviado correctamente al POS local");
-}
-
 export async function generarFacturaAfipPDF({
+  businessId,
   tipoComprobante,
   puntoVenta,
   saleId,
@@ -287,6 +264,7 @@ export async function generarFacturaAfipPDF({
   documentoCliente,
   telefonoCliente,
 }: {
+  businessId: string;
   tipoComprobante: number;
   puntoVenta: number;
   saleId: string;
@@ -589,7 +567,7 @@ export async function generarFacturaAfipPDF({
             qrUrl,
           });
 
-          await enviarTicketAlPOSLocal(ticketPayload);
+          await printboxService.enqueueJob(businessId, "INVOICE", ticketPayload);
 
           resolve();
         } catch (err: any) {

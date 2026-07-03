@@ -1,5 +1,5 @@
-import axios from "axios";
 import prisma from "../prisma";
+import { printboxService } from "./printbox.service";
 
 function numberOrZero(value: unknown) {
   const n = Number(value ?? 0);
@@ -300,30 +300,6 @@ function buildTicketPayload(sale: any) {
   };
 }
 
-async function enviarTicketAlPOSLocal(payload: any) {
-  const POS_LOCAL_URL = process.env.POS_LOCAL_URL;
-  const POS_LOCAL_TOKEN = process.env.POS_LOCAL_TOKEN;
-
-  if (!POS_LOCAL_URL) {
-    throw new Error("POS_LOCAL_URL no está configurado");
-  }
-
-  const url = `${POS_LOCAL_URL.replace(/\/$/, "")}/print/ticket`;
-
-  console.log("🖨️ Enviando ticket no fiscal al POS local:", url);
-  console.log("📦 Payload ticket no fiscal:", JSON.stringify(payload, null, 2));
-
-  const response = await axios.post(url, payload, {
-    timeout: 60000,
-    headers: {
-      "Content-Type": "application/json",
-      ...(POS_LOCAL_TOKEN ? { "x-pos-token": POS_LOCAL_TOKEN } : {}),
-    },
-  });
-
-  return response.data;
-}
-
 export const ticketService = {
   async printSaleTicket(saleId: string) {
     const sale = await prisma.sale.findUnique({
@@ -352,11 +328,11 @@ export const ticketService = {
 
     const payload = buildTicketPayload(sale);
 
-    const posResponse = await enviarTicketAlPOSLocal(payload);
+    const printJob = await printboxService.enqueueJob(sale.businessId, "SALE_TICKET", payload);
 
     return {
       payload,
-      posResponse,
+      printJob,
     };
   },
 };
